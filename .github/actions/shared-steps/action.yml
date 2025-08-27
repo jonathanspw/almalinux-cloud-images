@@ -41,7 +41,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-
     - name: Runner OS, install extra packages
       shell: bash
       run: |
@@ -218,6 +217,10 @@ runs:
             output_mask=output-${packer_source}/AlmaLinux-*.${{ env.alma_arch }}*.qcow2
             packer_source=qemu.${packer_source}
             ;;
+          gcp8|gcp9)
+            output_mask=output-${packer_source}/AlmaLinux-*${version_major}*.${{ env.alma_arch }}.tar.gz
+            packer_source=qemu.${packer_source}
+            ;;
           *)
             output_mask=output-${output_mask}
             packer_source=qemu.${packer_source}
@@ -367,6 +370,44 @@ runs:
         echo "IMAGE_FILE=${image_file}" >> $GITHUB_ENV
         echo "IMAGE_NAME=$(basename ${image_file})" >> $GITHUB_ENV
 
+    - id: 'google-auth-dev-images'
+      if: env.IMAGE_TYPE == 'gcp'
+      uses: 'google-github-actions/auth@v2'
+      with:
+        workload_identity_provider: '/projects/443728870479/locations/global/workloadIdentityPools/github-actions/providers/github'
+        service_account: 'github-actions-cloud-images@almalinux-dev-images-469421.iam.gserviceaccount.com'
+    
+    - name: 'Set up Cloud SDK'
+      if: env.IMAGE_TYPE == 'gcp'
+      uses: 'google-github-actions/setup-gcloud@v3.0.0'
+
+    - name: 'Upload output to GCP storage bucket'
+      if: env.IMAGE_TYPE == 'gcp'
+      shell: bash
+      run: gcloud storage cp ${{ env.IMAGE_FILE }} gs://almalinux-images-dev/${{ env.IMAGE_NAME }}
+
+    - name: Create image on GCP
+      if: env.IMAGE_TYPE == 'gcp'
+      shell: bash
+      run: |
+        # Create image on GCP
+        gcloud --project almalinux-dev-images-469421 compute images create almalinux-${{ env.version_major }}-v$(date +'%Y%m%d')                         \
+          --description="AlmaLinux, AlmaLinux, ${{ env.version_major }}, ${{ inputs.arch }} built on $(date +'%Y%m%d')"                                  \
+          --source-uri gs://almalinux-images-dev/${{ env.IMAGE_NAME }}                                                                                   \
+          --guest-os-features=GVNIC,UEFI_COMPATIBLE,VIRTIO_SCSI_MULTIQUEUE,SEV_CAPABLE,SEV_LIVE_MIGRATABLE,IDPF                                          \
+          --family almalinux-${{ env.version_major }} --architecture=${{ inputs.arch == 'x86_64' && 'X86_64' || 'ARM64' }} --labels=public-image=true
+
+    # - id: 'google-auth-image-testing'
+    #   if: env.IMAGE_TYPE == 'gcp'
+    #   uses: 'google-github-actions/auth@v2'
+    #   with:
+    #     workload_identity_provider: 'projects/443728870479/locations/global/workloadIdentityPools/my-pool/providers/my-provider'
+    #     service_account: 'github-actions-cloud-images@almalinux-dev-images-469421.iam.gserviceaccount.com'
+    
+    # - name: 'Set up Cloud SDK'
+    #   if: env.IMAGE_TYPE == 'gcp'
+    #   uses: 'google-github-actions/setup-gcloud@v3.0.0'
+
     # - name: Setup tmate session
     #   uses: mxschmitt/action-tmate@v3
 
@@ -499,6 +540,8 @@ runs:
         else
           true
         fi
+
+    
 
     - name: Publish to S3 Bucket and put object tagging with aws CLI
       if: inputs.upload_to_s3 == 'true'

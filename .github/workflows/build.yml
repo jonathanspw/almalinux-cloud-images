@@ -30,6 +30,7 @@ on:
             - ALL
             - azure
             - digitalocean        # TODO: require data to work with the cloud, such as: bucket, access key, secret key, etc.
+            - gcp
             - gencloud
             - oci
             - opennebula
@@ -114,6 +115,10 @@ jobs:
             VARIANTS_GH+=("azure-x86_64")
             VARIANTS_SH+=("azure-aarch64")
           fi
+          if [ "${{ inputs.image_type }}" = "gcp" -o "${{ inputs.image_type }}" = "ALL" ]; then
+            VARIANTS_GH+=("gcp-x86_64")
+            #VARIANTS_SH+=("gcp-aarch64")
+          fi
           if [ "${{ inputs.image_type }}" = "digitalocean" -o "${{ inputs.image_type }}" = "ALL" ]; then
             if [[ "${{ inputs.version_major }}" != *"kitten"*  ]] && [[ "${{ inputs.version_major }}" != *"10"  ]]; then
               VARIANTS_GH+=("digitalocean-x86_64")
@@ -175,6 +180,9 @@ jobs:
 
   build-gh-hosted:
     name: ${{ matrix.variant }} ${{ matrix.matrix_gh }} image
+    permissions:
+      id-token: write
+      contents: read
     needs: [init-data]
     if: ${{ needs.init-data.outputs.matrix_gh != '[]' }}
     runs-on: ubuntu-24.04
